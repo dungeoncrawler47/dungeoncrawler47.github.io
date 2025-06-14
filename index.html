@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>2D Dungeon Crawler - Multiplayer Update</title>
+    <title>2D Dungeon Crawler - Role Abilities Update</title>
     <style>
         body { 
             margin: 0; 
@@ -275,7 +275,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         let userId;
-        let gameId = 'default-game'; // Can be changed for different lobbies
+        let gameId = 'default-game';
         let unsubscribePlayerListener;
         let unsubscribeGameStateListener;
         let unsubscribeMessagesListener;
@@ -358,7 +358,7 @@
         
         // --- Map Generation & Initialization ---
         function generateSilentDepths() {
-             const width = 80, height = 80;
+            const width = 80, height = 80;
             let caveMap = Array.from({length: height}, () => Array(width).fill(1));
             for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) caveMap[y][x] = (x === 0 || y === 0 || x === width - 1 || y === height - 1) ? 1 : (Math.random() < 0.45 ? 1 : 0);
             for (let i = 0; i < 5; i++) {
@@ -378,6 +378,7 @@
             }
             maps.silentDepths = caveMap;
         }
+
         function generateBastion() {
             const width = 80, height = 80;
             let bastionMap = Array.from({length: height}, () => Array(width).fill(5));
@@ -417,7 +418,7 @@
             const allReady = Object.values(allPlayers).every(p => p.isReady);
             if (allReady && Object.keys(allPlayers).length > 0) {
                  const gameRef = doc(db, 'games', gameId);
-                 const doors = map.flatMap((row, y) => row.map((tile, x) => tile === 2 ? {x, y, isOpen: false} : null).filter(Boolean));
+                 const doors = maps[localPlayerState.dungeon].flatMap((row, y) => row.map((tile, x) => tile === 2 ? {x, y, isOpen: false} : null).filter(Boolean));
                  await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon, doors: doors }, { merge: true });
             }
         }
@@ -611,6 +612,9 @@
             }
         }
 
+        async function useCurrentAbility(abilityName) {
+            // ... Ability logic
+        }
 
         window.addEventListener('keydown', (e) => {
             if (isChatActive) return;
@@ -675,6 +679,7 @@
         });
         
         async function main() {
+            console.log("A");
             startScreenOverlay.style.display = 'flex';
             canvas.style.display = 'none';
 
