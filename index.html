@@ -262,15 +262,15 @@
         const playerListDiv = document.getElementById('player-list');
         
         // --- Firebase Setup ---
-        const firebaseConfig = {
-          apiKey: "AIzaSyB9ilEN4ov998nHzzJeFXJsPo7_m_wc_wE",
-          authDomain: "dungeoncrawler-ef121.firebaseapp.com",
-          projectId: "dungeoncrawler-ef121",
-          storageBucket: "dungeoncrawler-ef121.firebasestorage.app",
-          messagingSenderId: "1089729655289",
-          appId: "1:1089729655289:web:f8b0dbdb7a575f3f184d28",
-          measurementId: "G-1NQM61EGHL"
-        };
+const firebaseConfig = {
+  apiKey: "AIzaSyB9ilEN4ov998nHzzJeFXJsPo7_m_wc_wE",
+  authDomain: "dungeoncrawler-ef121.firebaseapp.com",
+  projectId: "dungeoncrawler-ef121",
+  storageBucket: "dungeoncrawler-ef121.firebasestorage.app",
+  messagingSenderId: "1089729655289",
+  appId: "1:1089729655289:web:f8b0dbdb7a575f3f184d28",
+  measurementId: "G-1NQM61EGHL"
+};
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -295,8 +295,6 @@
         // --- Colors ---
         const WALL_COLOR = '#4a4a4a';
         const FLOOR_COLOR = '#a0a0a0';
-        const DOOR_FRAME_COLOR = '#6b3e00';
-        const DOOR_CLOSED_COLOR = '#964B00';
         const PLAYER_COLOR = '#0077FF';
         const OTHER_PLAYER_COLOR = '#FF8C00'; 
         const GRASS_COLOR = '#2a8a3e';
@@ -402,6 +400,12 @@
             return { x: TILE_SIZE, y: TILE_SIZE };
         }
 
+        async function updatePlayerStateInDB() {
+            if (!userId) return;
+            const playerRef = doc(db, 'games', gameId, 'players', userId);
+            await setDoc(playerRef, localPlayerState, { merge: true });
+        }
+
         async function gameInit() {
             localPlayerState.name = playerNameInput.value.trim() || "Player";
             localPlayerState.isReady = true;
@@ -411,7 +415,7 @@
             if (allReady && Object.keys(allPlayers).length > 0) {
                  const gameRef = doc(db, 'games', gameId);
                  const doors = maps[localPlayerState.dungeon].flatMap((row, y) => row.map((tile, x) => tile === 2 ? {x, y, isOpen: false} : null).filter(Boolean));
-                 await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon, doors: doors }, { merge: true });
+                 await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon, doors: doors, projectiles: [], particles: [], activeEffects: [], deployedObjects: [] }, { merge: true });
             }
         }
         
@@ -649,7 +653,6 @@
                 document.querySelectorAll('#role-selection .selection-button').forEach(btn => btn.classList.remove('selected'));
                 e.target.classList.add('selected');
                 localPlayerState.role = e.target.dataset.role;
-                selectedRole = e.target.dataset.role; // Also update local non-synced variable
                 checkStartButton();
                 updatePlayerStateInDB();
             }
@@ -660,7 +663,6 @@
                 document.querySelectorAll('#dungeon-selection .selection-button').forEach(btn => btn.classList.remove('selected'));
                 e.target.classList.add('selected');
                 localPlayerState.dungeon = e.target.dataset.dungeon;
-                selectedDungeon = e.target.dataset.dungeon;
                 checkStartButton();
                 updatePlayerStateInDB();
             }
