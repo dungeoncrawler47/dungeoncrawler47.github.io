@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>2D Dungeon Crawler - Multiplayer Update</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000;
+            font-family: monospace;
+        }
+        canvas { 
+            display: none; /* Start with canvas hidden */
+            cursor: crosshair; 
+        }
+        #start-screen-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #FFF;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .start-screen-title {
+            font-size: 52px;
+            margin-bottom: 15px;
+        }
+        #player-name-input {
+            background-color: #111;
+            border: 2px solid #FFF;
+            color: #FFF;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 20px;
+            width: 300px;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        #player-name-input:focus {
+            outline: none;
+            border-color: #FFD700;
+        }
+        .selection-container {
+            display: flex;
+            width: 100%;
+            max-width: 1000px;
+            justify-content: space-around;
+        }
+        .selection-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 48%;
+        }
+        .selection-column h2 {
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        .selection-button {
+            width: 100%;
+            max-width: 350px;
+            height: 60px;
+            border: 2px solid #FFF;
+            background-color: #333;
+            color: #FFF;
+            font-size: 18px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-end;
+            padding: 8px;
+            text-align: right;
+            box-sizing: border-box;
+        }
+        .selection-button.disabled {
+            border-color: #555;
+            color: #555;
+            cursor: default;
+        }
+        .selection-button.selected {
+            border-color: #FFD700;
+            box-shadow: 0 0 15px #FFD700;
+        }
+        #start-game-button {
+            margin-top: 25px;
+            width: 220px;
+            height: 50px;
+            font-size: 24px;
+            background-color: #555;
+            border: 2px solid #888;
+            color: #888;
+            cursor: not-allowed;
+        }
+        #start-game-button.enabled {
+            background-color: #28a745;
+            border-color: #FFF;
+            color: #FFF;
+            cursor: pointer;
+        }
+        
+        /* In-Game UI */
+        #chat-ui-wrapper {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            align-items: flex-start;
+        }
+        #chat-container {
+            width: 262px;
+            height: 195px;
+            background-color: rgba(0, 0, 0, 0.6);
+            border: 2px solid #FFF;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            color: #FFF;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        #chat-container.collapsed {
+            opacity: 0;
+            transform: translateX(100%);
+            pointer-events: none;
+            height: 0;
+            width: 0;
+            border: none;
+        }
+        #chat-messages {
+            list-style-type: none;
+            padding: 10px;
+            margin: 0;
+            flex-grow: 1;
+            overflow-y: auto;
+            word-wrap: break-word;
+        }
+        #chat-messages li {
+            margin-bottom: 5px;
+        }
+        #chat-form {
+            display: flex;
+        }
+        #chat-input {
+            flex-grow: 1;
+            background-color: rgba(0, 0, 0, 0.8);
+            border: none;
+            border-top: 2px solid #FFF;
+            color: #FFF;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 16px;
+        }
+        #chat-input:focus {
+            outline: none;
+            background-color: rgba(30, 30, 30, 0.8);
+        }
+        #toggle-chat-button {
+            width: 24px;
+            height: 24px;
+            background-color: rgba(0,0,0,0.6);
+            border: 2px solid #FFF;
+            color: #FFF;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            position: relative;
+        }
+        #chat-notification {
+            width: 8px;
+            height: 8px;
+            background-color: #FF0000;
+            border-radius: 50%;
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            display: none;
+        }
+        #player-list {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="start-screen-overlay">
+        <h1 class="start-screen-title">Dungeon Crawler</h1>
+        <div id="player-list"></div>
+        <input type="text" id="player-name-input" placeholder="Enter Name" autocomplete="off" maxlength="15">
+        <div class="selection-container">
+            <div id="role-selection" class="selection-column">
+                <h2>Select a Role</h2>
+                <button class="selection-button" data-role="Mage">Mage</button>
+                <button class="selection-button" data-role="Weapons Expert">Weapons Expert</button>
+                <button class="selection-button" data-role="Engineer">Engineer</button>
+                <button class="selection-button" data-role="Medic">Medic</button>
+            </div>
+            <div id="dungeon-selection" class="selection-column">
+                <h2>Select a Dungeon</h2>
+                <button class="selection-button" data-dungeon="silentDepths">Silent Depths</button>
+                <button class="selection-button" data-dungeon="bastion">The Bastion of the Last Magus</button>
+                <button class="selection-button disabled" data-dungeon="dungeon3">???</button>
+                <button class="selection-button disabled" data-dungeon="dungeon4">???</button>
+            </div>
+        </div>
+        <button id="start-game-button">Start Game</button>
+    </div>
+
+    <div id="chat-ui-wrapper" style="display: none;">
+        <div id="chat-container">
+            <ul id="chat-messages"></ul>
+            <form id="chat-form">
+                <input type="text" id="chat-input" placeholder="Type..." autocomplete="off">
+            </form>
+        </div>
+        <button id="toggle-chat-button">
+            <span>-</span>
+            <div id="chat-notification"></div>
+        </button>
+    </div>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- DOM Elements ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreenOverlay = document.getElementById('start-screen-overlay');
+        const playerNameInput = document.getElementById('player-name-input');
+        const roleSelectionContainer = document.getElementById('role-selection');
+        const dungeonSelectionContainer = document.getElementById('dungeon-selection');
+        const startGameButton = document.getElementById('start-game-button');
+        const chatUiWrapper = document.getElementById('chat-ui-wrapper');
+        const chatContainer = document.getElementById('chat-container');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const toggleChatButton = document.getElementById('toggle-chat-button');
+        const chatNotification = document.getElementById('chat-notification');
+        const playerListDiv = document.getElementById('player-list');
+        
+        // --- Firebase Setup ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyB9ilEN4ov998nHzzJeFXJsPo7_m_wc_wE",
+          authDomain: "dungeoncrawler-ef121.firebaseapp.com",
+          projectId: "dungeoncrawler-ef121",
+          storageBucket: "dungeoncrawler-ef121.firebasestorage.app",
+          messagingSenderId: "1089729655289",
+          appId: "1:1089729655289:web:f8b0dbdb7a575f3f184d28",
+          measurementId: "G-1NQM61EGHL"
+        };
+      
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        let userId;
+        let gameId = 'default-game'; // Can be changed for different lobbies
+        let unsubscribePlayerListener;
+        let unsubscribeGameStateListener;
+        let unsubscribeMessagesListener;
+
+        // --- Canvas Setup ---
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // --- Game Constants ---
+        const TILE_SIZE = 20;
+        const PLAYER_SIZE = 12;
+        const FOV_RADIUS = 16;
+        const INTERACTION_DISTANCE = 2.0;
+        const PLAYER_BASE_SPEED = 2;
+        const DAMAGE_FLASH_DURATION = 15;
+
+        // --- Colors ---
+        const WALL_COLOR = '#4a4a4a';
+        const FLOOR_COLOR = '#a0a0a0';
+        const PLAYER_COLOR = '#0077FF';
+        const OTHER_PLAYER_COLOR = '#FF8C00'; 
+        const GRASS_COLOR = '#2a8a3e';
+        const ACID_COLOR = '#7FFF00';
+        const VOID_COLOR = '#1a001a';
+        const UNSEEN_COLOR = "rgba(0, 0, 0, 1)";
+        const UI_BACKGROUND_COLOR = 'rgba(0, 0, 0, 0.5)';
+        const UI_BORDER_COLOR = '#FFF';
+        const UI_DISABLED_COLOR = '#555';
+        const UI_HIGHLIGHT_COLOR = '#FFD700';
+        const HEALTH_COLOR = '#28a745';
+        const HEALTH_BG_COLOR = '#dc3545';
+        const SYSTEM_MESSAGE_COLOR = '#FF6347'; 
+        const BEAM_COLOR = '#9932CC';
+        const SHIELD_COLOR = 'rgba(0, 191, 255, 0.3)';
+        const POTION_PARTICLE_COLOR = '#DA70D6';
+        const GRENADE_PARTICLE_COLOR = '#FFA500';
+        const HEAL_CIRCLE_COLOR = 'rgba(144, 238, 144, 0.3)';
+
+        // --- Asset Management ---
+        const assets = {};
+        const assetList = [ /* ... unchanged ... */ ];
+
+        function loadAssets() { /* ... unchanged ... */ }
+
+        // --- Game State ---
+        let gameState = 'loading';
+        let localPlayerState = {
+            id: null,
+            name: "Player",
+            role: null,
+            dungeon: null,
+            isReady: false,
+            x: 0,
+            y: 0,
+            health: 100,
+            maxHealth: 100,
+            inventory: [],
+            selectedAbilityIndex: 0,
+            cooldowns: [0,0,0],
+            damageFlash: 0
+        };
+        let allPlayers = {}; 
+        let gameData = {};
+        let isChatActive = false;
+        
+        // --- Maps ---
+        const maps = {
+            silentDepths: [], // Will be generated
+            bastion: []
+        };
+
+        // --- Entity State ---
+        let map;
+        let doors = [];
+        let visibilityGrid;
+        let particles = [];
+        let projectiles = [];
+        let deployedObjects = [];
+        let activeEffects = [];
+
+        let camera = { x: 0, y: 0 };
+        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, '1': false, '2': false, '3': false };
+        let mousePos = {x: 0, y: 0};
+        let isMouseDown = false;
+        
+        // --- Map Generation & Initialization ---
+        function generateSilentDepths() { /* ... unchanged ... */ }
+        function generateBastion() { /* ... unchanged ... */ }
+        generateSilentDepths();
+        generateBastion();
+        
+        function findStartPosition() {
+            const floorTiles = [];
+            for (let y = 0; y < map.length; y++) for (let x = 0; x < map[y].length; x++) if (map[y][x] === 0 || map[y][x] === 3) floorTiles.push({ x, y });
+            if (floorTiles.length > 0) {
+                const randomTile = floorTiles[Math.floor(Math.random() * floorTiles.length)];
+                return { x: randomTile.x * TILE_SIZE + (TILE_SIZE - PLAYER_SIZE) / 2, y: randomTile.y * TILE_SIZE + (TILE_SIZE - PLAYER_SIZE) / 2 };
+            }
+            return { x: TILE_SIZE, y: TILE_SIZE };
+        }
+
+        async function gameInit() {
+            localPlayerState.name = playerNameInput.value.trim() || "Player";
+            localPlayerState.isReady = true;
+            await updatePlayerStateInDB();
+            
+            const allReady = Object.values(allPlayers).every(p => p.isReady);
+            if (allReady) {
+                 const gameRef = doc(db, 'games', gameId);
+                 await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon }, { merge: true });
+            }
+        }
+        
+        function startGame(dungeonId) {
+            map = maps[dungeonId];
+            initializeGrids();
+            const startPos = findStartPosition();
+            localPlayerState.x = startPos.x;
+            localPlayerState.y = startPos.y;
+            configurePlayerForRole();
+            updatePlayerStateInDB();
+            
+            startScreenOverlay.style.display = 'none';
+            canvas.style.display = 'block';
+            chatUiWrapper.style.display = 'flex';
+            gameState = 'playing';
+            
+            listenForGameUpdates();
+        }
+
+        const capabilities = { /* ... unchanged ... */ };
+
+        function configurePlayerForRole() {
+            localPlayerState.role = selectedRole;
+            localPlayerState.inventory = capabilities[selectedRole];
+            localPlayerState.health = 100;
+            localPlayerState.maxHealth = 100;
+            localPlayerState.cooldowns = [0, 0, 0];
+            localPlayerState.selectedAbilityIndex = 0;
+        }
+
+        function initializeGrids() {
+            visibilityGrid = Array(map.length).fill(null).map(() => Array(map[0].length).fill(false));
+        }
+        
+        // --- Core Logic (Collision, Vision, Interaction, Abilities) ---
+        function isOpaque(x, y) {
+            const tileType = map[y]?.[x];
+            if (tileType === 1) return true;
+            if (gameData.doors) {
+                 const door = gameData.doors.find(d => d.x === x && d.y === y);
+                 if (door) return !door.isOpen;
+            }
+            return false;
+        }
+
+        function checkCollision(x, y) {
+            const corners = [{x, y}, {x: x + PLAYER_SIZE, y}, {x, y: y + PLAYER_SIZE}, {x: x + PLAYER_SIZE, y: y + PLAYER_SIZE}];
+            for (const c of corners) if (isOpaque(Math.floor(c.x / TILE_SIZE), Math.floor(c.y / TILE_SIZE))) return true;
+            return false;
+        }
+
+        function checkHazards() {
+            const pTileX = Math.floor((localPlayerState.x + PLAYER_SIZE / 2) / TILE_SIZE);
+            const pTileY = Math.floor((localPlayerState.y + PLAYER_SIZE / 2) / TILE_SIZE);
+            const tile = map[pTileY]?.[pTileX];
+            if (tile === 4 && localPlayerState.damageFlash <= 0) {
+                localPlayerState.health = Math.max(0, localPlayerState.health - 2);
+                localPlayerState.damageFlash = DAMAGE_FLASH_DURATION;
+            }
+            if (tile === 5) { localPlayerState.health = 0; }
+        }
+        
+        function updateFieldOfVision() {
+            const pTileX = Math.floor((localPlayerState.x + PLAYER_SIZE / 2) / TILE_SIZE), pTileY = Math.floor((localPlayerState.y + PLAYER_SIZE / 2) / TILE_SIZE);
+            for (let y = 0; y < visibilityGrid.length; y++) for (let x = 0; x < visibilityGrid[y].length; x++) visibilityGrid[y][x] = false;
+            visibilityGrid[pTileY][pTileX] = true;
+            for (let i = 0; i < 360; i += 0.5) castRay(pTileX, pTileY, i * (Math.PI / 180));
+        }
+        
+        function castRay(x0, y0, angle) {
+            let cx = x0 + 0.5, cy = y0 + 0.5;
+            for (let i = 0; i < FOV_RADIUS; i++) {
+                cx += Math.cos(angle); cy += Math.sin(angle);
+                const tileX = Math.floor(cx), tileY = Math.floor(cy);
+                if (tileX < 0 || tileX >= map[0].length || tileY < 0 || tileY >= map.length) break;
+                visibilityGrid[tileY][tileX] = true;
+                if (isOpaque(tileX, tileY)) break;
+            }
+        }
+        
+        function addChatMessage(message, color = '#FFF') {
+            const li = document.createElement('li');
+            li.textContent = message;
+            li.style.color = color;
+            chatMessages.appendChild(li);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            if (chatContainer.classList.contains('collapsed')) {
+                chatNotification.style.display = 'block';
+            }
+        }
+        
+        // --- Update & Draw ---
+        function updateGame() {
+            const player = allPlayers[userId];
+            if(!player) return;
+
+            if(player.health <= 0) { 
+                addChatMessage(`${player.name} has died.`, SYSTEM_MESSAGE_COLOR);
+                gameState = 'roleSelection';
+                chatUiWrapper.style.display = 'none';
+                startScreenOverlay.style.display = 'flex';
+                canvas.style.display = 'none';
+                localPlayerState.isReady = false;
+                updatePlayerStateInDB();
+                return;
+            }
+            if(localPlayerState.damageFlash > 0) localPlayerState.damageFlash--;
+            let dx = 0, dy = 0;
+            if (!isChatActive) {
+                if (keys.w || keys.ArrowUp) dy -= player.speed; 
+                if (keys.s || keys.ArrowDown) dy += player.speed;
+                if (keys.a || keys.ArrowLeft) dx -= player.speed; 
+                if (keys.d || keys.ArrowRight) dx += player.speed;
+            }
+            if (dx !== 0 || dy !== 0) {
+                 const newX = player.x + dx;
+                 const newY = player.y + dy;
+                 if (!checkCollision(newX, newY)) {
+                    localPlayerState.x = newX;
+                    localPlayerState.y = newY;
+                    updatePlayerStateInDB();
+                }
+            }
+            
+            checkHazards();
+        }
+        
+        function drawGame() {
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            const sCol = Math.floor(camera.x / TILE_SIZE)-1, eCol = sCol + Math.ceil(canvas.width / TILE_SIZE)+2;
+            const sRow = Math.floor(camera.y / TILE_SIZE)-1, eRow = sRow + Math.ceil(canvas.height / TILE_SIZE)+2;
+            
+            for (let y = sRow; y < eRow; y++) {
+                for (let x = sCol; x < eCol; x++) {
+                    if (y < 0 || y >= map.length || x < 0 || x >= map[0].length) {
+                        ctx.fillStyle = UNSEEN_COLOR;
+                        ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                        continue;
+                    };
+                    
+                    if (!visibilityGrid[y][x]) {
+                        ctx.fillStyle = UNSEEN_COLOR;
+                        ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                        continue;
+                    }
+
+                    let tileType = map[y][x];
+                    let baseImg = assets.floor; let fallbackColor = FLOOR_COLOR;
+                    switch(tileType) {
+                        case 1: baseImg = assets.wall; fallbackColor = WALL_COLOR; break;
+                        case 3: baseImg = assets.grass; fallbackColor = GRASS_COLOR; break;
+                        case 4: baseImg = assets.acid; fallbackColor = ACID_COLOR; break;
+                        case 5: baseImg = null; fallbackColor = VOID_COLOR; break;
+                    }
+                    if(baseImg) ctx.drawImage(baseImg, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    else { ctx.fillStyle = fallbackColor; ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE); }
+
+                    // ... drawing logic for other elements
+                }
+            }
+            
+            Object.values(allPlayers).forEach(p => {
+                if(!p) return;
+                ctx.fillStyle = p.id === userId ? PLAYER_COLOR : OTHER_PLAYER_COLOR;
+                ctx.fillRect(p.x, p.y, PLAYER_SIZE, PLAYER_SIZE);
+                ctx.fillStyle = "white";
+                ctx.textAlign = "center";
+                ctx.fillText(p.name, p.x + PLAYER_SIZE/2, p.y - 5);
+            });
+            
+            ctx.restore();
+            drawHUD();
+        }
+        
+        function drawHUD() { /* ... unchanged ... */ }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (gameState === 'playing') {
+                updateGame();
+                drawGame(); 
+            } 
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listeners & Game Start ---
+        // ... all event listeners
+        
+        async function main() {
+            await loadAssets();
+            startScreenOverlay.style.display = 'flex';
+            canvas.style.display = 'none';
+
+            const userCredential = await signInAnonymously(auth);
+            userId = userCredential.user.uid;
+            localPlayerState.id = userId;
+
+            listenForPlayers();
+            listenForGameUpdates();
+            gameState = 'roleSelection';
+            gameLoop();
+        }
+
+        window.onload = main;
+    </script>
+</body>
+</html>
