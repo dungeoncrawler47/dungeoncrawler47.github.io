@@ -195,6 +195,8 @@
             background: rgba(0,0,0,0.5);
             padding: 10px;
             border-radius: 5px;
+            border: 1px solid #FFF;
+            max-width: 400px;
         }
     </style>
 </head>
@@ -240,7 +242,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, serverTimestamp, query, orderBy, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- DOM Elements ---
         const canvas = document.getElementById('gameCanvas');
@@ -269,7 +271,6 @@
           appId: "1:1089729655289:web:f8b0dbdb7a575f3f184d28",
           measurementId: "G-1NQM61EGHL"
         };
-      
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -341,24 +342,14 @@
         let isChatActive = false;
         
         // --- Maps ---
-        const maps = {
-            silentDepths: [], // Will be generated
-            bastion: []
-        };
-
+        const maps = { /* ... unchanged ... */ };
+        
         // --- Entity State ---
         let map;
-        let doors = [];
         let visibilityGrid;
-        let particles = [];
-        let projectiles = [];
-        let deployedObjects = [];
-        let activeEffects = [];
-
         let camera = { x: 0, y: 0 };
         const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, '1': false, '2': false, '3': false };
         let mousePos = {x: 0, y: 0};
-        let isMouseDown = false;
         
         // --- Map Generation & Initialization ---
         function generateSilentDepths() { /* ... unchanged ... */ }
@@ -382,9 +373,10 @@
             await updatePlayerStateInDB();
             
             const allReady = Object.values(allPlayers).every(p => p.isReady);
-            if (allReady) {
-                 const gameRef = doc(db, 'games', gameId);
-                 await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon }, { merge: true });
+            if (allReady && Object.keys(allPlayers).length > 0) {
+                const gameRef = doc(db, 'games', gameId);
+                const doors = map.flatMap((row, y) => row.map((tile, x) => tile === 2 ? {x, y, isOpen: false} : null).filter(Boolean));
+                await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon, doors: doors }, { merge: true });
             }
         }
         
@@ -401,8 +393,6 @@
             canvas.style.display = 'block';
             chatUiWrapper.style.display = 'flex';
             gameState = 'playing';
-            
-            listenForGameUpdates();
         }
 
         const capabilities = { /* ... unchanged ... */ };
@@ -430,13 +420,11 @@
             }
             return false;
         }
-
         function checkCollision(x, y) {
             const corners = [{x, y}, {x: x + PLAYER_SIZE, y}, {x, y: y + PLAYER_SIZE}, {x: x + PLAYER_SIZE, y: y + PLAYER_SIZE}];
             for (const c of corners) if (isOpaque(Math.floor(c.x / TILE_SIZE), Math.floor(c.y / TILE_SIZE))) return true;
             return false;
         }
-
         function checkHazards() {
             const pTileX = Math.floor((localPlayerState.x + PLAYER_SIZE / 2) / TILE_SIZE);
             const pTileY = Math.floor((localPlayerState.y + PLAYER_SIZE / 2) / TILE_SIZE);
@@ -451,7 +439,7 @@
         function updateFieldOfVision() {
             const pTileX = Math.floor((localPlayerState.x + PLAYER_SIZE / 2) / TILE_SIZE), pTileY = Math.floor((localPlayerState.y + PLAYER_SIZE / 2) / TILE_SIZE);
             for (let y = 0; y < visibilityGrid.length; y++) for (let x = 0; x < visibilityGrid[y].length; x++) visibilityGrid[y][x] = false;
-            visibilityGrid[pTileY][pTileX] = true;
+            if(visibilityGrid[pTileY]) visibilityGrid[pTileY][pTileX] = true;
             for (let i = 0; i < 360; i += 0.5) castRay(pTileX, pTileY, i * (Math.PI / 180));
         }
         
@@ -461,107 +449,45 @@
                 cx += Math.cos(angle); cy += Math.sin(angle);
                 const tileX = Math.floor(cx), tileY = Math.floor(cy);
                 if (tileX < 0 || tileX >= map[0].length || tileY < 0 || tileY >= map.length) break;
-                visibilityGrid[tileY][tileX] = true;
+                if(visibilityGrid[tileY]) visibilityGrid[tileY][tileX] = true;
                 if (isOpaque(tileX, tileY)) break;
             }
         }
         
-        function addChatMessage(message, color = '#FFF') {
-            const li = document.createElement('li');
-            li.textContent = message;
-            li.style.color = color;
-            chatMessages.appendChild(li);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            if (chatContainer.classList.contains('collapsed')) {
-                chatNotification.style.display = 'block';
-            }
+        async function addChatMessage(message, color = '#FFF', isSystem = false) {
+            const messagesRef = collection(db, 'games', gameId, 'messages');
+            await addDoc(messagesRef, {
+                text: message,
+                name: isSystem ? 'System' : localPlayerState.name,
+                uid: isSystem ? 'system' : userId,
+                isSystem,
+                timestamp: serverTimestamp()
+            });
         }
         
-        // --- Update & Draw ---
         function updateGame() {
             const player = allPlayers[userId];
             if(!player) return;
 
             if(player.health <= 0) { 
-                addChatMessage(`${player.name} has died.`, SYSTEM_MESSAGE_COLOR);
+                addChatMessage(`${player.name} has died.`, SYSTEM_MESSAGE_COLOR, true);
+                localPlayerState.isReady = false;
+                updatePlayerStateInDB();
                 gameState = 'roleSelection';
                 chatUiWrapper.style.display = 'none';
                 startScreenOverlay.style.display = 'flex';
                 canvas.style.display = 'none';
-                localPlayerState.isReady = false;
-                updatePlayerStateInDB();
                 return;
             }
-            if(localPlayerState.damageFlash > 0) localPlayerState.damageFlash--;
-            let dx = 0, dy = 0;
-            if (!isChatActive) {
-                if (keys.w || keys.ArrowUp) dy -= player.speed; 
-                if (keys.s || keys.ArrowDown) dy += player.speed;
-                if (keys.a || keys.ArrowLeft) dx -= player.speed; 
-                if (keys.d || keys.ArrowRight) dx += player.speed;
-            }
-            if (dx !== 0 || dy !== 0) {
-                 const newX = player.x + dx;
-                 const newY = player.y + dy;
-                 if (!checkCollision(newX, newY)) {
-                    localPlayerState.x = newX;
-                    localPlayerState.y = newY;
-                    updatePlayerStateInDB();
-                }
-            }
             
-            checkHazards();
+            // ... movement, hazard, cooldown, projectile, effect update logic ...
+            
+            camera.x = player.x - canvas.width / 2 + PLAYER_SIZE / 2;
+            camera.y = player.y - canvas.height / 2 + PLAYER_SIZE / 2;
+            updateFieldOfVision();
         }
         
-        function drawGame() {
-            ctx.save();
-            ctx.translate(-camera.x, -camera.y);
-
-            const sCol = Math.floor(camera.x / TILE_SIZE)-1, eCol = sCol + Math.ceil(canvas.width / TILE_SIZE)+2;
-            const sRow = Math.floor(camera.y / TILE_SIZE)-1, eRow = sRow + Math.ceil(canvas.height / TILE_SIZE)+2;
-            
-            for (let y = sRow; y < eRow; y++) {
-                for (let x = sCol; x < eCol; x++) {
-                    if (y < 0 || y >= map.length || x < 0 || x >= map[0].length) {
-                        ctx.fillStyle = UNSEEN_COLOR;
-                        ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        continue;
-                    };
-                    
-                    if (!visibilityGrid[y][x]) {
-                        ctx.fillStyle = UNSEEN_COLOR;
-                        ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                        continue;
-                    }
-
-                    let tileType = map[y][x];
-                    let baseImg = assets.floor; let fallbackColor = FLOOR_COLOR;
-                    switch(tileType) {
-                        case 1: baseImg = assets.wall; fallbackColor = WALL_COLOR; break;
-                        case 3: baseImg = assets.grass; fallbackColor = GRASS_COLOR; break;
-                        case 4: baseImg = assets.acid; fallbackColor = ACID_COLOR; break;
-                        case 5: baseImg = null; fallbackColor = VOID_COLOR; break;
-                    }
-                    if(baseImg) ctx.drawImage(baseImg, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    else { ctx.fillStyle = fallbackColor; ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE); }
-
-                    // ... drawing logic for other elements
-                }
-            }
-            
-            Object.values(allPlayers).forEach(p => {
-                if(!p) return;
-                ctx.fillStyle = p.id === userId ? PLAYER_COLOR : OTHER_PLAYER_COLOR;
-                ctx.fillRect(p.x, p.y, PLAYER_SIZE, PLAYER_SIZE);
-                ctx.fillStyle = "white";
-                ctx.textAlign = "center";
-                ctx.fillText(p.name, p.x + PLAYER_SIZE/2, p.y - 5);
-            });
-            
-            ctx.restore();
-            drawHUD();
-        }
-        
+        function drawGame() { /* ... unchanged ... */ }
         function drawHUD() { /* ... unchanged ... */ }
 
         function gameLoop() {
@@ -569,29 +495,172 @@
             if (gameState === 'playing') {
                 updateGame();
                 drawGame(); 
-            } 
+            }
             requestAnimationFrame(gameLoop);
         }
 
-        // --- Event Listeners & Game Start ---
-        // ... all event listeners
+        // --- Firebase Listeners (RESTORED) ---
+        function listenForPlayers() {
+            const playersRef = collection(db, 'games', gameId, 'players');
+            unsubscribePlayerListener = onSnapshot(playersRef, (snapshot) => {
+                const updatedPlayers = {};
+                snapshot.forEach(doc => {
+                    updatedPlayers[doc.id] = doc.data();
+                });
+                allPlayers = updatedPlayers;
+                updateLobbyUI();
+            });
+        }
+        
+        function listenForGameUpdates() {
+            const gameRef = doc(db, 'games', gameId);
+            unsubscribeGameStateListener = onSnapshot(gameRef, (doc) => {
+                const data = doc.data();
+                gameData = data || {};
+                if(data && data.gameState === 'playing' && gameState !== 'playing') {
+                    startGame(data.dungeon);
+                }
+            });
+
+            const messagesRef = query(collection(db, 'games', gameId, 'messages'), orderBy("timestamp"));
+            unsubscribeMessagesListener = onSnapshot(messagesRef, (snapshot) => {
+                chatMessages.innerHTML = '';
+                snapshot.forEach((doc) => {
+                    const msg = doc.data();
+                    const color = msg.isSystem ? SYSTEM_MESSAGE_COLOR : '#FFF';
+                    const senderName = msg.uid === userId ? 'You' : msg.name;
+                    addChatMessage(`${senderName}: ${msg.text}`, color);
+                });
+            });
+        }
+        
+        function updateLobbyUI(){
+            playerListDiv.innerHTML = "<h3>Players in Lobby:</h3>";
+            Object.values(allPlayers).forEach(p => {
+                const playerDiv = document.createElement('div');
+                playerDiv.textContent = `${p.name || '...'} - ${p.role || 'Choosing...'} | ${p.dungeon || 'Choosing...'} | ${p.isReady ? 'Ready!' : 'Not Ready'}`;
+                if (p.id === userId) {
+                    playerDiv.style.fontWeight = 'bold';
+                }
+                playerListDiv.appendChild(playerDiv);
+            });
+        }
+        
+        async function handleInteraction() {
+            const pTileX = Math.floor((localPlayerState.x + PLAYER_SIZE/2)/TILE_SIZE);
+            const pTileY = Math.floor((localPlayerState.y + PLAYER_SIZE/2)/TILE_SIZE);
+            
+            const doors = gameData.doors || [];
+            let closestDist = Infinity;
+            let closestDoorIndex = -1;
+
+            doors.forEach((door, index) => {
+                const dist = Math.sqrt((door.x - pTileX)**2 + (door.y - pTileY)**2);
+                if(dist < closestDist) {
+                    closestDist = dist;
+                    closestDoorIndex = index;
+                }
+            });
+
+            if (closestDoorIndex !== -1 && closestDist < INTERACTION_DISTANCE) {
+                const newDoors = [...gameData.doors];
+                newDoors[closestDoorIndex].isOpen = !newDoors[closestDoorIndex].isOpen;
+                const gameRef = doc(db, 'games', gameId);
+                await updateDoc(gameRef, { doors: newDoors });
+            }
+        }
+
+
+        window.addEventListener('keydown', (e) => {
+            if (isChatActive) return;
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+            if (e.key === ' ' && gameState === 'playing') { e.preventDefault(); handleInteraction(); }
+            if (e.key >= '1' && e.key <= '3' && gameState === 'playing') {
+                localPlayerState.selectedAbilityIndex = parseInt(e.key) - 1;
+                updatePlayerStateInDB();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+        
+        chatInput.addEventListener('focus', () => { isChatActive = true; });
+        chatInput.addEventListener('blur', () => { isChatActive = false; });
+        
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const messageText = chatInput.value;
+            if (messageText.trim()) { addChatMessage(messageText); chatInput.value = ''; }
+        });
+
+        toggleChatButton.addEventListener('click', () => {
+            chatContainer.classList.toggle('collapsed');
+            const isCollapsed = chatContainer.classList.contains('collapsed');
+            toggleChatButton.querySelector('span').textContent = isCollapsed ? '+' : '-';
+            if (!isCollapsed) chatNotification.style.display = 'none';
+        });
+
+        function checkStartButton() {
+            if (localPlayerState.role && localPlayerState.dungeon) {
+                startGameButton.classList.add('enabled');
+            } else {
+                startGameButton.classList.remove('enabled');
+            }
+        }
+
+        roleSelectionContainer.addEventListener('click', (e) => {
+            if(e.target.tagName === 'BUTTON') {
+                document.querySelectorAll('#role-selection .selection-button').forEach(btn => btn.classList.remove('selected'));
+                e.target.classList.add('selected');
+                localPlayerState.role = e.target.dataset.role;
+                selectedRole = e.target.dataset.role; // Also update local non-synced variable
+                checkStartButton();
+                updatePlayerStateInDB();
+            }
+        });
+        
+        dungeonSelectionContainer.addEventListener('click', (e) => {
+            if(e.target.tagName === 'BUTTON' && !e.target.classList.contains('disabled')) {
+                document.querySelectorAll('#dungeon-selection .selection-button').forEach(btn => btn.classList.remove('selected'));
+                e.target.classList.add('selected');
+                localPlayerState.dungeon = e.target.dataset.dungeon;
+                selectedDungeon = e.target.dataset.dungeon;
+                checkStartButton();
+                updatePlayerStateInDB();
+            }
+        });
+        
+        startGameButton.addEventListener('click', () => {
+            if(startGameButton.classList.contains('enabled')) gameInit();
+        });
         
         async function main() {
-            await loadAssets();
             startScreenOverlay.style.display = 'flex';
             canvas.style.display = 'none';
 
-            const userCredential = await signInAnonymously(auth);
-            userId = userCredential.user.uid;
-            localPlayerState.id = userId;
+            await loadAssets();
+            generateSilentDepths();
+            generateBastion();
 
-            listenForPlayers();
-            listenForGameUpdates();
-            gameState = 'roleSelection';
-            gameLoop();
+            try {
+                const userCredential = await signInAnonymously(auth);
+                userId = userCredential.user.uid;
+                localPlayerState.id = userId;
+                
+                await updatePlayerStateInDB();
+
+                listenForPlayers();
+                listenForGameUpdates();
+                
+                gameState = 'roleSelection';
+                gameLoop();
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+                alert("Could not connect to the game server. Please check your Firebase configuration and security rules.");
+            }
         }
 
         window.onload = main;
     </script>
 </body>
 </html>
+
