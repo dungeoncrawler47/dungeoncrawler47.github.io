@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>2D Dungeon Crawler - Role Abilities Update</title>
+    <title>2D Dungeon Crawler - Multiplayer Update</title>
     <style>
         body { 
             margin: 0; 
@@ -262,15 +262,15 @@
         const playerListDiv = document.getElementById('player-list');
         
         // --- Firebase Setup ---
-const firebaseConfig = {
-  apiKey: "AIzaSyB9ilEN4ov998nHzzJeFXJsPo7_m_wc_wE",
-  authDomain: "dungeoncrawler-ef121.firebaseapp.com",
-  projectId: "dungeoncrawler-ef121",
-  storageBucket: "dungeoncrawler-ef121.firebasestorage.app",
-  messagingSenderId: "1089729655289",
-  appId: "1:1089729655289:web:f8b0dbdb7a575f3f184d28",
-  measurementId: "G-1NQM61EGHL"
-};
+        const firebaseConfig = {
+          apiKey: "AIzaSyB9ilEN4ov998nHzzJeFXJsPo7_m_wc_wE",
+          authDomain: "dungeoncrawler-ef121.firebaseapp.com",
+          projectId: "dungeoncrawler-ef121",
+          storageBucket: "dungeoncrawler-ef121.firebasestorage.app",
+          messagingSenderId: "1089729655289",
+          appId: "1:1089729655289:web:f8b0dbdb7a575f3f184d28",
+          measurementId: "G-1NQM61EGHL"
+        };
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -295,6 +295,8 @@ const firebaseConfig = {
         // --- Colors ---
         const WALL_COLOR = '#4a4a4a';
         const FLOOR_COLOR = '#a0a0a0';
+        const DOOR_FRAME_COLOR = '#6b3e00';
+        const DOOR_CLOSED_COLOR = '#964B00';
         const PLAYER_COLOR = '#0077FF';
         const OTHER_PLAYER_COLOR = '#FF8C00'; 
         const GRASS_COLOR = '#2a8a3e';
@@ -344,7 +346,6 @@ const firebaseConfig = {
         let camera = { x: 0, y: 0 };
         const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, '1': false, '2': false, '3': false };
         let mousePos = {x: 0, y: 0};
-        let isMouseDown = false;
         
         // --- Map Generation & Initialization ---
         function generateSilentDepths() {
