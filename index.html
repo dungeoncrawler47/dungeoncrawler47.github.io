@@ -430,12 +430,7 @@
             gameState = 'playing';
         }
 
-        const capabilities = {
-            'Mage': [{name: 'Beam', cooldown: 20}, {name: 'Shield', cooldown: 600}, {name: 'Potion', cooldown: 300}],
-            'Weapons Expert': [{name: 'Handgun', cooldown: 10}, {name: 'Machine Gun', cooldown: 700}, {name: 'Grenade', cooldown: 400}],
-            'Engineer': [{name: 'Handgun', cooldown: 10}, {name: 'Thermal Scan', cooldown: 800}, {name: 'Remote Detonation', cooldown: 20}],
-            'Medic': [{name: 'Handgun', cooldown: 10}, {name: 'Heal Player', cooldown: 300}, {name: 'Heal Circle', cooldown: 900}],
-        };
+        const capabilities = { /* ... unchanged ... */ };
 
         function configurePlayerForRole() {
             localPlayerState.role = selectedRole;
