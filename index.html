@@ -342,20 +342,62 @@
         let isChatActive = false;
         
         // --- Maps ---
-        const maps = { /* ... unchanged ... */ };
+        const maps = { silentDepths: [], bastion: [] };
         
         // --- Entity State ---
         let map;
         let visibilityGrid;
+        let particles = [];
+        let projectiles = [];
+        let deployedObjects = [];
+        let activeEffects = [];
+
         let camera = { x: 0, y: 0 };
         const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false, '1': false, '2': false, '3': false };
         let mousePos = {x: 0, y: 0};
         
         // --- Map Generation & Initialization ---
-        function generateSilentDepths() { /* ... unchanged ... */ }
-        function generateBastion() { /* ... unchanged ... */ }
-        generateSilentDepths();
-        generateBastion();
+        function generateSilentDepths() {
+             const width = 80, height = 80;
+            let caveMap = Array.from({length: height}, () => Array(width).fill(1));
+            for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) caveMap[y][x] = (x === 0 || y === 0 || x === width - 1 || y === height - 1) ? 1 : (Math.random() < 0.45 ? 1 : 0);
+            for (let i = 0; i < 5; i++) {
+                const newMap = Array.from({length: height}, () => Array(width).fill(1));
+                for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+                    let wallCount = 0;
+                    for (let ny = y - 1; ny <= y + 1; ny++) for (let nx = x - 1; nx <= x + 1; nx++) if (caveMap[ny]?.[nx] === 1) wallCount++;
+                    newMap[y][x] = (wallCount > 4) ? 1 : 0;
+                }
+                caveMap = newMap;
+            }
+            for (let i = 0; i < 5; i++) {
+                const lakeX = Math.floor(Math.random() * (width - 20)) + 10, lakeY = Math.floor(Math.random() * (height - 20)) + 10, lakeRadius = 5 + Math.random() * 5;
+                const startY = Math.max(1, Math.floor(lakeY - lakeRadius)), endY = Math.min(height - 2, Math.ceil(lakeY + lakeRadius));
+                const startX = Math.max(1, Math.floor(lakeX - lakeRadius)), endX = Math.min(width - 2, Math.ceil(lakeX + lakeRadius));
+                for (let y = startY; y <= endY; y++) for (let x = startX; x <= endX; x++) if (Math.sqrt(Math.pow(x - lakeX, 2) + Math.pow(y - lakeY, 2)) < lakeRadius) if (caveMap[y]?.[x] === 0) caveMap[y][x] = 4;
+            }
+            maps.silentDepths = caveMap;
+        }
+        function generateBastion() {
+            const width = 80, height = 80;
+            let bastionMap = Array.from({length: height}, () => Array(width).fill(5));
+            const fillRect = (x, y, w, h, tile) => { for(let i=y; i < y+h && i < height; i++) for(let j=x; j < x+w && j < width; j++) if(i>=0 && j>=0) bastionMap[i][j] = tile; };
+            const strokeRect = (x, y, w, h, tile) => {
+                 for(let i=y; i < y+h; i++) for(let j=x; j < x+w; j++) if (i === y || i === y + h - 1 || j === x || j === x + w - 1) if(i >= 0 && i < height && j >= 0 && j < width) bastionMap[i][j] = tile;
+            };
+            
+            fillRect(25, 68, 30, 10, 3); fillRect(38, 65, 4, 3, 3);
+            fillRect(5, 5, 70, 60, 1); fillRect(6, 6, 68, 58, 0); fillRect(38, 60, 4, 5, 0);
+            fillRect(38, 10, 4, 50, 0); fillRect(10, 30, 60, 4, 0);
+            strokeRect(10, 40, 20, 15, 1); bastionMap[48][29] = 2;
+            strokeRect(10, 10, 20, 15, 1); bastionMap[20][29] = 2;
+            strokeRect(50, 40, 20, 15, 1); bastionMap[48][50] = 2;
+            strokeRect(50, 10, 20, 15, 1); bastionMap[20][50] = 2;
+            strokeRect(32, 34, 6, 10, 1); bastionMap[34][37] = 2;
+            strokeRect(42, 34, 6, 10, 1); bastionMap[34][42] = 2;
+
+            maps.bastion = bastionMap;
+        }
         
         function findStartPosition() {
             const floorTiles = [];
@@ -374,9 +416,9 @@
             
             const allReady = Object.values(allPlayers).every(p => p.isReady);
             if (allReady && Object.keys(allPlayers).length > 0) {
-                const gameRef = doc(db, 'games', gameId);
-                const doors = map.flatMap((row, y) => row.map((tile, x) => tile === 2 ? {x, y, isOpen: false} : null).filter(Boolean));
-                await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon, doors: doors }, { merge: true });
+                 const gameRef = doc(db, 'games', gameId);
+                 const doors = map.flatMap((row, y) => row.map((tile, x) => tile === 2 ? {x, y, isOpen: false} : null).filter(Boolean));
+                 await setDoc(gameRef, { gameState: 'playing', dungeon: localPlayerState.dungeon, doors: doors }, { merge: true });
             }
         }
         
@@ -410,7 +452,6 @@
             visibilityGrid = Array(map.length).fill(null).map(() => Array(map[0].length).fill(false));
         }
         
-        // --- Core Logic (Collision, Vision, Interaction, Abilities) ---
         function isOpaque(x, y) {
             const tileType = map[y]?.[x];
             if (tileType === 1) return true;
@@ -663,4 +704,3 @@
     </script>
 </body>
 </html>
-
